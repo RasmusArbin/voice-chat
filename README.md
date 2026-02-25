@@ -194,22 +194,31 @@ gpt-4o-realtime-preview Model
 
 - Each interview session has a unique `session_id`
 - Session state is maintained in-memory (replace with Redis for production)
-- Conversation history is automatically captured from `history_added` and `history_updated` events
-- On reconnection, history is replayed using OpenAI's `conversation.item.create` API
-- Text transcripts from audio interactions are preserved for session resumption
-- Sessions resume with the main interviewer agent when history exists
+- Conversation history is **not currently captured** (requires SDK enhancement)
+- Sessions are identified by `session_id` but do not persist across reconnections
+- The `SessionStore` infrastructure is in place for future history support
 
-### Session History Persistence
+### Session History Persistence [NOT YET IMPLEMENTED]
 
-The system implements manual history management due to SDK limitations:
+**Current Limitation**: The OpenAI Realtime SDK does not emit `history_added` or `history_updated` events. The original implementation attempted to use these events, but they do not exist in the API.
 
-1. **Capture**: Listens for `history_added` and `history_updated` events from the RealtimeSession
-2. **Extract**: Extracts text transcripts from audio interactions (both user input and assistant responses)
-3. **Store**: Saves conversation items in-memory (keyed by `session_id`)
-4. **Replay**: On reconnection, sends `conversation.item.create` events to rebuild context
-5. **Resume**: Starts with the main interviewer agent when history exists, skipping the welcome phase
+**Infrastructure in Place**:
+- `SessionStore` class provides methods for managing conversation items
+- `conversation.item.create` replay mechanism is ready for when history capture is enabled
+- Session structure supports future history implementation
 
-**Technical Note**: The current SDK version does not accept a `session` parameter in `RealtimeRunner.__init__()`. History persistence is implemented by capturing realtime events and replaying them via raw WebSocket messages.
+**Future Implementation**:
+When the SDK provides history events, or when using an alternative approach (e.g., manual event subscriptions), the following will occur:
+1. **Capture**: Listen for conversation events from the RealtimeSession
+2. **Extract**: Convert audio transcripts and text to storable format
+3. **Store**: Save conversation items in-memory (keyed by `session_id`)
+4. **Replay**: Send `conversation.item.create` events to rebuild context on reconnection
+5. **Resume**: Start with main interviewer agent when history exists, skipping welcome phase
+
+**Technical Context**: The current SDK version does not provide built-in history event extraction. A workaround would require either:
+- Awaiting SDK update with history event support
+- Implementing manual history capture at the WebSocket message level
+- Using server-side transcription services to build history
 
 ### Interrupt Handling
 
@@ -445,12 +454,12 @@ For issues or questions:
 ## Changelog
 
 ### Version 1.1.0 (Current)
-- **Session Persistence**: Implemented automatic conversation history capture and replay
-- **History Events**: Integrated `history_added` and `history_updated` event handlers
-- **Interrupt Handling**: Added intelligent interrupt blocking to prevent duplicate welcome messages
-- **Language Enforcement**: Added English-only directive to agent instructions
-- **Bug Fix**: Resolved `RealtimeRunner` initialization error by removing unsupported `session` parameter
-- **Session Resumption**: Sessions with history now start with the main interviewer instead of welcome agent
+- **Bug Fix**: Removed dead code handlers for non-existent `history_added` and `history_updated` events
+- **Code Cleanup**: Removed `_extract_text_from_history_item()` and `_replay_history()` functions (no longer used)
+- **Documentation**: Updated Session History Persistence section to clarify that history capture is not currently functional
+- **Interrupt Handling**: Maintains intelligent interrupt blocking to prevent duplicate welcome messages
+- **Language Enforcement**: Agent instructions include English-only directive
+- **Infrastructure**: `SessionStore` class remains for future history implementation when SDK support is available
 
 ### Version 1.0.0
 - Initial release

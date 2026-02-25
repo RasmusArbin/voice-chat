@@ -111,76 +111,7 @@ class SessionStore:
             logger.info("[%s] New session created", session_id)
 
 
-def _extract_text_from_history_item(item: Any) -> dict[str, str] | None:
-    """Extract a text-only message from a realtime history item."""
-    if hasattr(item, "model_dump"):
-        raw_item = item.model_dump()
-    elif hasattr(item, "dict"):
-        raw_item = item.dict()
-    else:
-        raw_item = item
 
-    if not isinstance(raw_item, dict):
-        return None
-
-    role = raw_item.get("role")
-    if role not in {"user", "assistant", "system"}:
-        return None
-
-    content = raw_item.get("content") or []
-    texts: list[str] = []
-    for entry in content:
-        if not isinstance(entry, dict):
-            continue
-        entry_type = entry.get("type")
-        text: str | None = None
-        if entry_type in {"input_text", "text", "output_text"}:
-            text = entry.get("text")
-        elif entry_type in {"input_audio", "audio", "output_audio"}:
-            text = entry.get("transcript")
-        if text:
-            texts.append(text)
-
-    if not texts:
-        return None
-
-    return {"role": role, "text": " ".join(texts)}
-
-
-async def _replay_history(session: Any, session_id: str) -> None:
-    """Replay stored text history into the realtime session."""
-    items = SessionStore.get_items(session_id)
-    if not items:
-        return
-
-    for item in items:
-        role = item.get("role")
-        text = item.get("text")
-        if not role or not text:
-            continue
-
-        if role == "assistant":
-            content_type = "output_text"
-        else:
-            content_type = "input_text"
-
-        payload = {
-            "type": "conversation.item.create",
-            "other_data": {
-                "item": {
-                    "type": "message",
-                    "role": role,
-                    "content": [
-                        {
-                            "type": content_type,
-                            "text": text,
-                        }
-                    ],
-                }
-            },
-        }
-
-        await session.model.send_event(RealtimeModelSendRawMessage(message=payload))
 
 app.add_middleware(
     CORSMiddleware,
@@ -271,11 +202,7 @@ async def websocket_interview(websocket: WebSocket, session_id: str) -> None:
                        session_id, starting_agent.name)
             await websocket.send_text(json.dumps({"type": "session_ready"}))
 
-            # For resumed sessions, restore history before sending the next turn.
-            if is_resume:
-                await _replay_history(session, session_id)
-                logger.info("[%s] Replayed %d history items", 
-                           session_id, len(SessionStore.get_items(session_id)))
+
 
             # For resumed sessions, send acknowledgment; for new sessions, start welcome
             if is_resume:
@@ -374,24 +301,6 @@ async def websocket_interview(websocket: WebSocket, session_id: str) -> None:
                                 json.dumps({"type": "tool_end", "tool": tool_name})
                             )
                             SessionStore.add_event(session_id, "tool_end", {"tool": tool_name})
-
-                        elif event_type == "history_added":
-                            history_item = getattr(event, "item", None)
-                            extracted = _extract_text_from_history_item(history_item)
-                            if extracted:
-                                SessionStore.add_items(session_id, [extracted])
-
-                        elif event_type == "history_updated":
-                            history_items = getattr(event, "history", [])
-                            extracted_items = [
-                                extracted
-                                for extracted in (
-                                    _extract_text_from_history_item(item)
-                                    for item in history_items
-                                )
-                                if extracted
-                            ]
-                            SessionStore.set_items(session_id, extracted_items)
 
                         elif event_type == "error":
                             logger.error("[%s] Session error: %s", session_id, event)
