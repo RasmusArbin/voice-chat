@@ -36,22 +36,20 @@ SESSIONS: dict[str, dict[str, Any]] = {}
 
 
 class SessionStore:
-    """In-memory session store implementing the Agents SDK Session protocol.
+    """In-memory session store for managing interview sessions.
     
     Stores both metadata (for debugging) and conversation history (for agent resumption).
     """
 
-    def __init__(self, session_id: str) -> None:
-        """Initialize a session store for a specific session ID."""
-        self.session_id = session_id
-        if session_id not in SESSIONS:
-            SESSIONS[session_id] = {
-                "created_at": asyncio.get_event_loop().time(),
-                "events": [],
-                "is_active": True,
-                "items": [],  # Conversation items for agent context
-            }
-            logger.info("[%s] New session created", session_id)
+    @staticmethod
+    def _create_session_dict() -> dict[str, Any]:
+        """Create a new session dictionary with default values."""
+        return {
+            "created_at": asyncio.get_event_loop().time(),
+            "events": [],
+            "is_active": True,
+            "items": [],
+        }
 
     @staticmethod
     def get(session_id: str) -> dict[str, Any] | None:
@@ -95,62 +93,22 @@ class SessionStore:
     def set_items(session_id: str, items: list[dict[str, str]]) -> None:
         """Replace stored conversation items for resume."""
         if session_id not in SESSIONS:
-            SESSIONS[session_id] = {
-                "created_at": asyncio.get_event_loop().time(),
-                "events": [],
-                "is_active": True,
-                "items": [],
-            }
+            SESSIONS[session_id] = SessionStore._create_session_dict()
         SESSIONS[session_id]["items"] = items
 
     @staticmethod
     def add_items(session_id: str, items: list[dict[str, str]]) -> None:
         """Append stored conversation items for resume."""
         if session_id not in SESSIONS:
-            SESSIONS[session_id] = {
-                "created_at": asyncio.get_event_loop().time(),
-                "events": [],
-                "is_active": True,
-                "items": [],
-            }
+            SESSIONS[session_id] = SessionStore._create_session_dict()
         SESSIONS[session_id]["items"].extend(items)
 
-    # ─── Session Protocol Implementation ─────────────────────────────────────
-    # These methods are unused right now but kept for future compatibility.
-
-    async def async_get_items(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """Get conversation items (implements Session protocol)."""
-        if self.session_id not in SESSIONS:
-            return []
-        items = SESSIONS[self.session_id]["items"]
-        if limit:
-            return items[-limit:]
-        return items
-
-    async def async_add_items(self, items: list[dict[str, Any]]) -> None:
-        """Add conversation items (implements Session protocol)."""
-        if self.session_id not in SESSIONS:
-            SESSIONS[self.session_id] = {
-                "created_at": asyncio.get_event_loop().time(),
-                "events": [],
-                "is_active": True,
-                "items": [],
-            }
-        SESSIONS[self.session_id]["items"].extend(items)
-        logger.debug("[%s] Added %d items to conversation history", 
-                    self.session_id, len(items))
-
-    async def async_pop_item(self) -> dict[str, Any] | None:
-        """Remove and return the most recent item (implements Session protocol)."""
-        if self.session_id not in SESSIONS or not SESSIONS[self.session_id]["items"]:
-            return None
-        return SESSIONS[self.session_id]["items"].pop()
-
-    async def async_clear_session(self) -> None:
-        """Clear all conversation items (implements Session protocol)."""
-        if self.session_id in SESSIONS:
-            SESSIONS[self.session_id]["items"] = []
-            logger.info("[%s] Session cleared", self.session_id)
+    @staticmethod
+    def ensure_session(session_id: str) -> None:
+        """Ensure a session exists in the store."""
+        if session_id not in SESSIONS:
+            SESSIONS[session_id] = SessionStore._create_session_dict()
+            logger.info("[%s] New session created", session_id)
 
 
 def _extract_text_from_history_item(item: Any) -> dict[str, str] | None:
@@ -282,8 +240,8 @@ async def websocket_interview(websocket: WebSocket, session_id: str) -> None:
     logger.info("[%s] WebSocket connected (resuming: %s, prior items: %d)", 
                session_id, is_resume, history_count)
 
-    # Create session store instance for conversation history management
-    SessionStore(session_id)
+    # Ensure session exists in the store
+    SessionStore.ensure_session(session_id)
 
     # Choose starting agent based on whether this is a new or resumed session
     starting_agent = main_interviewer if is_resume else welcome_agent
@@ -438,7 +396,8 @@ async def websocket_interview(websocket: WebSocket, session_id: str) -> None:
                         elif event_type == "error":
                             logger.error("[%s] Session error: %s", session_id, event)
                             await websocket.send_text(
-                                json.dumps({"type": "error", "message": str(event)})
+                                # Do not expose internal error details to the client in production
+                                json.dumps({"type": "error", "message": "Internal server error"})
                             )
                             SessionStore.add_event(session_id, "error", {"message": str(event)})
 
