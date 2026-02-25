@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 CLIENT_HTML = Path(__file__).parent.parent / "client" / "index.html"
 
-app = FastAPI(title="Kaisa Voice Interview")
+app = FastAPI(title="AI Voice Interview")
 
 app.add_middleware(
     CORSMiddleware,

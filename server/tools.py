@@ -1,3 +1,11 @@
+"""
+Mock tools that can be called by agents during interviews.
+
+These are placeholder implementations demonstrating the tool interface.
+In production, replace with real integrations to your ATS, document storage,
+calendar systems, and other backend services.
+"""
+
 import logging
 
 from agents import function_tool
