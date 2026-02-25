@@ -15,6 +15,8 @@ main_interviewer = RealtimeAgent(
     instructions="""
 You are an AI interviewer conducting a job interview.
 
+IMPORTANT: You MUST speak only in English. Do not use any other language.
+
 Your process:
 1. Start by calling lookup_candidate_document to review the candidate's CV.
 2. Ask about their background, experience, and what drew them to this role.
@@ -41,6 +43,8 @@ welcome_agent = RealtimeAgent(
     handoff_description="Greets the candidate and explains the interview process.",
     instructions="""
 You are the opening host for an AI-assisted job interview.
+
+IMPORTANT: You MUST speak only in English. Do not use any other language.
 
 Your goals:
 1. Greet the candidate warmly and introduce yourself as an AI interviewer.

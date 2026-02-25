@@ -6,10 +6,11 @@ A sophisticated voice-based recruitment interview system built with OpenAI's Age
 
 - **Real-time Voice Interviews**: Uses OpenAI's gpt-4o-realtime-preview model for low-latency speech interaction
 - **Multi-Agent Architecture**: Specialized agents handle different interview phases (welcome, background, technical, logistics)
-- **Session Management**: Maintains conversation context across reconnections with stateful session handling
+- **Session Persistence**: Automatically saves and restores conversation history across reconnections using text-based conversation replay
 - **WebSocket Integration**: Real-time bidirectional communication between client and server
-- **Voice Activity Detection**: Intelligent handling of interruptions and natural speech flow
+- **Voice Activity Detection**: Intelligent handling of interruptions and natural speech flow with interrupt blocking during agent initialization
 - **Guardrails**: Built-in safety mechanisms to prevent inappropriate outputs and ensure fair interviews
+- **Language Enforcement**: Configured for English-only interviews to ensure consistency
 
 ## Project Structure
 
@@ -192,8 +193,32 @@ gpt-4o-realtime-preview Model
 ### Session Management
 
 - Each interview session has a unique `session_id`
-- Session state is maintained across reconnections
-- Conversation history is preserved for context continuity
+- Session state is maintained in-memory (replace with Redis for production)
+- Conversation history is automatically captured from `history_added` and `history_updated` events
+- On reconnection, history is replayed using OpenAI's `conversation.item.create` API
+- Text transcripts from audio interactions are preserved for session resumption
+- Sessions resume with the main interviewer agent when history exists
+
+### Session History Persistence
+
+The system implements manual history management due to SDK limitations:
+
+1. **Capture**: Listens for `history_added` and `history_updated` events from the RealtimeSession
+2. **Extract**: Extracts text transcripts from audio interactions (both user input and assistant responses)
+3. **Store**: Saves conversation items in-memory (keyed by `session_id`)
+4. **Replay**: On reconnection, sends `conversation.item.create` events to rebuild context
+5. **Resume**: Starts with the main interviewer agent when history exists, skipping the welcome phase
+
+**Technical Note**: The current SDK version does not accept a `session` parameter in `RealtimeRunner.__init__()`. History persistence is implemented by capturing realtime events and replaying them via raw WebSocket messages.
+
+### Interrupt Handling
+
+To prevent duplicate welcome messages and premature interruptions:
+
+- **Default State**: User interrupts are blocked when the session starts
+- **Activation**: Interrupts are enabled when the assistant begins sending audio (`audio` event)
+- **Mechanism**: Uses a shared `allow_interrupts` flag between async tasks (`nonlocal` scope)
+- **Protection**: Prevents client-side noise or accidental clicks from triggering interrupts before the agent speaks
 
 ### Audio Processing
 
@@ -296,6 +321,16 @@ The system includes output guardrails to:
 - Check network latency (higher latency increases delays)
 - Verify system audio settings
 - Consider adjusting VAD (Voice Activity Detection) parameters in agent config
+
+#### Agent speaks in unexpected language
+- The system is configured to speak English only
+- If non-English responses occur, check agent instructions in `interview_agents.py`
+- Verify the `IMPORTANT: You MUST speak only in English` directive is present
+
+#### Duplicate welcome messages on start
+- This issue has been resolved with interrupt blocking
+- The system now blocks user interrupts until the assistant begins speaking
+- If still occurring, check the `allow_interrupts` flag in `main.py`
 
 ### Debug Mode
 
@@ -408,6 +443,14 @@ For issues or questions:
 4. Verify `.env` configuration
 
 ## Changelog
+
+### Version 1.1.0 (Current)
+- **Session Persistence**: Implemented automatic conversation history capture and replay
+- **History Events**: Integrated `history_added` and `history_updated` event handlers
+- **Interrupt Handling**: Added intelligent interrupt blocking to prevent duplicate welcome messages
+- **Language Enforcement**: Added English-only directive to agent instructions
+- **Bug Fix**: Resolved `RealtimeRunner` initialization error by removing unsupported `session` parameter
+- **Session Resumption**: Sessions with history now start with the main interviewer instead of welcome agent
 
 ### Version 1.0.0
 - Initial release

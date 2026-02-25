@@ -74,15 +74,57 @@
   <button id="btn-mute">Mute</button>
   <button id="btn-interrupt">Interrupt</button>
   <button id="btn-end" disabled>End</button>
+  <button id="btn-new-session">New Session</button>
 </div>
 <div id="log"></div>
 
 <script>
 // ─── Configuration ────────────────────────────────────────────────────────────
-const WS_URL           = `ws://${location.host}/ws/${crypto.randomUUID()}`;
 const TARGET_RATE      = 24000;   // Hz — must match OpenAI Realtime API
 const SEND_INTERVAL_MS = 100;     // Flush mic buffer to server every 100 ms
 const LOOKAHEAD_S      = 0.05;    // 50 ms scheduler lookahead for gapless playback
+
+// ─── UI helpers (must be before session creation) ────────────────────────────
+const statusEl    = document.getElementById("status");
+const agentEl     = document.getElementById("agent-label");
+const logEl       = document.getElementById("log");
+const btnMute     = document.getElementById("btn-mute");
+const btnInterrupt= document.getElementById("btn-interrupt");
+const btnEnd      = document.getElementById("btn-end");
+const btnNewSession = document.getElementById("btn-new-session");
+
+function setStatus(text, cls) {
+  statusEl.textContent = text;
+  statusEl.className   = cls || "";
+}
+function log(text) {
+  const ts = new Date().toLocaleTimeString();
+  logEl.textContent += `[${ts}] ${text}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ─── Session Management ────────────────────────────────────────────────────────
+function getOrCreateSessionId() {
+  const STORAGE_KEY = "interview_session_id";
+  let sessionId = localStorage.getItem(STORAGE_KEY);
+  
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    localStorage.setItem(STORAGE_KEY, sessionId);
+    log("Created new session: " + sessionId.substring(0, 8) + "...");
+  } else {
+    log("Resuming session: " + sessionId.substring(0, 8) + "...");
+  }
+  
+  return sessionId;
+}
+
+function clearSessionId() {
+  localStorage.removeItem("interview_session_id");
+}
+
+const SESSION_ID = getOrCreateSessionId();
+const WS_URL = `ws://${location.host}/ws/${SESSION_ID}`;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let ws                  = null;
@@ -96,24 +138,6 @@ let sendInterval        = null;          // ID of the mic-buffer flush interval
 let reconnectAttempts   = 0;
 const MAX_RECONNECT     = 5;
 const BASE_RECONNECT_MS = 3000;
-
-// ─── UI helpers ───────────────────────────────────────────────────────────────
-const statusEl    = document.getElementById("status");
-const agentEl     = document.getElementById("agent-label");
-const logEl       = document.getElementById("log");
-const btnMute     = document.getElementById("btn-mute");
-const btnInterrupt= document.getElementById("btn-interrupt");
-const btnEnd      = document.getElementById("btn-end");
-
-function setStatus(text, cls) {
-  statusEl.textContent = text;
-  statusEl.className   = cls || "";
-}
-function log(text) {
-  const ts = new Date().toLocaleTimeString();
-  logEl.textContent += `[${ts}] ${text}\n`;
-  logEl.scrollTop = logEl.scrollHeight;
-}
 
 // ─── Audio helpers ─────────────────────────────────────────────────────────────
 
@@ -364,7 +388,20 @@ btnEnd.onclick = () => {
     if (sendInterval) { clearInterval(sendInterval); sendInterval = null; }
     btnEnd.disabled = true;
     setStatus("Interview ended");
+    clearSessionId();  // Clear session on explicit termination
+    log("Session cleared.");
   }
+};
+
+btnNewSession.onclick = () => {
+  clearSessionId();
+  if (ws) {
+    ws.close(1000, "Starting new session");
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    if (sendInterval) { clearInterval(sendInterval); sendInterval = null; }
+  }
+  log("Starting new session...");
+  setTimeout(() => location.reload(), 500);
 };
 
 // Keepalive ping every 30 s
