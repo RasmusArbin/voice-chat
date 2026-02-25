@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Interview</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 640px;
+    margin: 2rem auto;
+    padding: 1rem;
+    color: #1a1a1a;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+
+  #status {
+    display: inline-block;
+    padding: 0.3rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 1rem;
+    background: #fef3c7;
+    color: #92400e;
+  }
+  #status.connected  { background: #d1fae5; color: #065f46; }
+  #status.error      { background: #fee2e2; color: #991b1b; }
+
+  #agent-label {
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    color: #4b5563;
+  }
+
+  #controls {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  button {
+    padding: 0.45rem 1.1rem;
+    font-size: 0.9rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #f3f4f6; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.active { background: #fee2e2; border-color: #fca5a5; }
+
+  #log {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 0.75rem;
+    min-height: 220px;
+    max-height: 420px;
+    overflow-y: auto;
+    font-size: 0.8rem;
+    font-family: monospace;
+    background: #f9fafb;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<h1>AI Interview</h1>
+<div id="status">Connecting…</div>
+<div id="agent-label">Agent: —</div>
+<div id="controls">
+  <button id="btn-mute">Mute</button>
+  <button id="btn-interrupt">Interrupt</button>
+  <button id="btn-end" disabled>End</button>
+</div>
+<div id="log"></div>
+
+<script>
+// ─── Configuration ────────────────────────────────────────────────────────────
+const WS_URL           = `ws://${location.host}/ws/${crypto.randomUUID()}`;
+const TARGET_RATE      = 24000;   // Hz — must match OpenAI Realtime API
+const SEND_INTERVAL_MS = 100;     // Flush mic buffer to server every 100 ms
+const LOOKAHEAD_S      = 0.05;    // 50 ms scheduler lookahead for gapless playback
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let ws           = null;
+let audioCtx     = null;
+let micStream    = null;
+let isMuted      = false;
+let isConnected  = false;
+let scheduledEnd = 0;             // AudioContext time through which output is scheduled
+let sendBuf      = new Int16Array(0);
+
+// ─── UI helpers ───────────────────────────────────────────────────────────────
+const statusEl    = document.getElementById("status");
+const agentEl     = document.getElementById("agent-label");
+const logEl       = document.getElementById("log");
+const btnMute     = document.getElementById("btn-mute");
+const btnInterrupt= document.getElementById("btn-interrupt");
+const btnEnd      = document.getElementById("btn-end");
+
+function setStatus(text, cls) {
+  statusEl.textContent = text;
+  statusEl.className   = cls || "";
+}
+function log(text) {
+  const ts = new Date().toLocaleTimeString();
+  logEl.textContent += `[${ts}] ${text}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ─── Audio helpers ─────────────────────────────────────────────────────────────
+
+/** Linear-interpolation resample from fromRate to toRate. */
+function resample(f32, fromRate, toRate) {
+  if (fromRate === toRate) return f32;
+  const ratio  = fromRate / toRate;
+  const outLen = Math.round(f32.length / ratio);
+  const out    = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const pos = i * ratio;
+    const lo  = Math.floor(pos);
+    const hi  = Math.min(lo + 1, f32.length - 1);
+    out[i] = f32[lo] + (f32[hi] - f32[lo]) * (pos - lo);
+  }
+  return out;
+}
+
+/** Float32 [-1, 1] → Int16 PCM16. */
+function floatToInt16(f32) {
+  const i16 = new Int16Array(f32.length);
+  for (let i = 0; i < f32.length; i++) {
+    const c = Math.max(-1, Math.min(1, f32[i]));
+    i16[i]  = c < 0 ? c * 0x8000 : c * 0x7FFF;
+  }
+  return i16;
+}
+
+/** Int16 PCM16 bytes → Float32 for Web Audio API. */
+function int16ToFloat32(buf) {
+  const i16  = new Int16Array(buf);
+  const f32  = new Float32Array(i16.length);
+  for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768;
+  return f32;
+}
+
+// ─── Microphone capture ────────────────────────────────────────────────────────
+
+async function startMicrophone() {
+  audioCtx = new AudioContext({ sampleRate: TARGET_RATE });
+
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+  });
+
+  const source    = audioCtx.createMediaStreamSource(micStream);
+  const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+  processor.onaudioprocess = (e) => {
+    if (!isConnected || isMuted) return;
+
+    const raw       = e.inputBuffer.getChannelData(0);
+    const resampled = resample(raw, audioCtx.sampleRate, TARGET_RATE);
+    const chunk     = floatToInt16(resampled);
+
+    // Append to accumulation buffer
+    const merged = new Int16Array(sendBuf.length + chunk.length);
+    merged.set(sendBuf);
+    merged.set(chunk, sendBuf.length);
+    sendBuf = merged;
+  };
+
+  // Flush mic buffer to server at regular intervals
+  setInterval(() => {
+    if (!isConnected || sendBuf.length === 0) return;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(sendBuf.buffer.slice(0));
+    }
+    sendBuf = new Int16Array(0);
+  }, SEND_INTERVAL_MS);
+
+  source.connect(processor);
+  processor.connect(audioCtx.destination);
+  log("Microphone active.");
+}
+
+// ─── Audio playback ────────────────────────────────────────────────────────────
+
+/** Schedule a PCM16 ArrayBuffer for gapless playback. */
+function playAudio(arrayBuffer) {
+  if (!audioCtx) return;
+
+  const f32    = int16ToFloat32(arrayBuffer);
+  const abuf   = audioCtx.createBuffer(1, f32.length, TARGET_RATE);
+  abuf.copyToChannel(f32, 0);
+
+  const now     = audioCtx.currentTime;
+  const startAt = Math.max(now + LOOKAHEAD_S, scheduledEnd);
+
+  const src = audioCtx.createBufferSource();
+  src.buffer = abuf;
+  src.connect(audioCtx.destination);
+  src.start(startAt);
+
+  scheduledEnd = startAt + abuf.duration;
+}
+
+/** Immediately stop all scheduled audio (used on interruption). */
+function stopPlayback() {
+  if (!audioCtx) return;
+  // Closing and recreating the AudioContext is the most reliable cross-browser
+  // way to cancel all scheduled nodes immediately.
+  audioCtx.close();
+  audioCtx    = new AudioContext({ sampleRate: TARGET_RATE });
+  scheduledEnd = 0;
+
+  // Reconnect microphone to the new context
+  if (micStream) {
+    const source    = audioCtx.createMediaStreamSource(micStream);
+    const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+    processor.onaudioprocess = (e) => {
+      if (!isConnected || isMuted) return;
+      const raw       = e.inputBuffer.getChannelData(0);
+      const resampled = resample(raw, audioCtx.sampleRate, TARGET_RATE);
+      const chunk     = floatToInt16(resampled);
+      const merged    = new Int16Array(sendBuf.length + chunk.length);
+      merged.set(sendBuf);
+      merged.set(chunk, sendBuf.length);
+      sendBuf = merged;
+    };
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+  }
+}
+
+// ─── WebSocket ─────────────────────────────────────────────────────────────────
+
+function connect() {
+  setStatus("Connecting…");
+  ws = new WebSocket(WS_URL);
+  ws.binaryType = "arraybuffer";  // Receive binary frames as ArrayBuffer, not Blob
+
+  ws.onopen = async () => {
+    setStatus("Starting microphone…");
+    log("WebSocket connected.");
+    try {
+      await startMicrophone();
+    } catch (err) {
+      setStatus("Microphone error: " + err.message, "error");
+      log("ERROR: " + err.message);
+    }
+  };
+
+  ws.onmessage = (evt) => {
+    if (evt.data instanceof ArrayBuffer) {
+      playAudio(evt.data);
+      return;
+    }
+
+    const msg = JSON.parse(evt.data);
+    switch (msg.type) {
+      case "session_ready":
+        setStatus("Interview in progress", "connected");
+        isConnected = true;
+        btnEnd.disabled = false;
+        log("Session ready. Interview starting…");
+        break;
+
+      case "audio_end":
+        break;
+
+      case "audio_interrupted":
+        stopPlayback();
+        log("Agent interrupted.");
+        break;
+
+      case "agent_start":
+        agentEl.textContent = `Agent: ${msg.agent ?? "—"}`;
+        log(`Agent active: ${msg.agent}`);
+        break;
+
+      case "handoff":
+        agentEl.textContent = `Agent: ${msg.to_agent ?? "—"}`;
+        log(`Handoff → ${msg.to_agent}`);
+        break;
+
+      case "tool_start":
+        log(`Tool call: ${msg.tool}…`);
+        break;
+
+      case "tool_end":
+        log(`Tool done: ${msg.tool}`);
+        break;
+
+      case "error":
+        setStatus("Error", "error");
+        log(`ERROR: ${msg.message}`);
+        break;
+
+      case "pong":
+        break;
+    }
+  };
+
+  ws.onclose = (evt) => {
+    isConnected = false;
+    btnEnd.disabled = true;
+    setStatus(`Disconnected (${evt.code})`, "error");
+    log(`WebSocket closed (code ${evt.code}).`);
+    if (evt.code !== 1000) {
+      log("Reconnecting in 3 s…");
+      setTimeout(connect, 3000);
+    }
+  };
+
+  ws.onerror = () => {
+    setStatus("Connection error", "error");
+    log("WebSocket error — see console.");
+  };
+}
+
+// ─── Controls ──────────────────────────────────────────────────────────────────
+
+btnMute.onclick = () => {
+  isMuted = !isMuted;
+  btnMute.textContent = isMuted ? "Unmute" : "Mute";
+  btnMute.classList.toggle("active", isMuted);
+};
+
+btnInterrupt.onclick = () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "interrupt" }));
+    stopPlayback();
+    log("Interrupted agent.");
+  }
+};
+
+btnEnd.onclick = () => {
+  if (ws) {
+    ws.close(1000, "User ended interview");
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    btnEnd.disabled = true;
+    setStatus("Interview ended");
+  }
+};
+
+// Keepalive ping every 30 s
+setInterval(() => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "ping" }));
+  }
+}, 30_000);
+
+connect();
+</script>
+</body>
+</html>
