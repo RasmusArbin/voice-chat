@@ -75,6 +75,10 @@ async def websocket_interview(websocket: WebSocket, session_id: str) -> None:
             logger.info("[%s] RealtimeSession started", session_id)
             await websocket.send_text(json.dumps({"type": "session_ready"}))
 
+            # Kick off the Welcome Agent — without this the model waits
+            # indefinitely for the user to speak first.
+            await session.send_message(".")
+
             async def browser_to_session() -> None:
                 """Read frames from the browser and feed them to the session."""
                 try:

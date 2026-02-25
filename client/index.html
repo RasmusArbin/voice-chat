@@ -85,13 +85,17 @@ const SEND_INTERVAL_MS = 100;     // Flush mic buffer to server every 100 ms
 const LOOKAHEAD_S      = 0.05;    // 50 ms scheduler lookahead for gapless playback
 
 // ─── State ────────────────────────────────────────────────────────────────────
-let ws           = null;
-let audioCtx     = null;
-let micStream    = null;
-let isMuted      = false;
-let isConnected  = false;
-let scheduledEnd = 0;             // AudioContext time through which output is scheduled
-let sendBuf      = new Int16Array(0);
+let ws                  = null;
+let audioCtx            = null;
+let micStream           = null;
+let isMuted             = false;
+let isConnected         = false;
+let scheduledEnd        = 0;             // AudioContext time through which output is scheduled
+let sendBuf             = new Int16Array(0);
+let sendInterval        = null;          // ID of the mic-buffer flush interval
+let reconnectAttempts   = 0;
+const MAX_RECONNECT     = 5;
+const BASE_RECONNECT_MS = 3000;
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
 const statusEl    = document.getElementById("status");
@@ -173,7 +177,9 @@ async function startMicrophone() {
   };
 
   // Flush mic buffer to server at regular intervals
-  setInterval(() => {
+  // Clear any existing interval first to prevent duplicates on reconnect
+  if (sendInterval) clearInterval(sendInterval);
+  sendInterval = setInterval(() => {
     if (!isConnected || sendBuf.length === 0) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(sendBuf.buffer.slice(0));
@@ -243,6 +249,7 @@ function connect() {
   ws.binaryType = "arraybuffer";  // Receive binary frames as ArrayBuffer, not Blob
 
   ws.onopen = async () => {
+    reconnectAttempts = 0;
     setStatus("Starting microphone…");
     log("WebSocket connected.");
     try {
@@ -259,7 +266,13 @@ function connect() {
       return;
     }
 
-    const msg = JSON.parse(evt.data);
+    let msg;
+    try {
+      msg = JSON.parse(evt.data);
+    } catch (err) {
+      log("ERROR: Received malformed message from server.");
+      return;
+    }
     switch (msg.type) {
       case "session_ready":
         setStatus("Interview in progress", "connected");
@@ -310,8 +323,15 @@ function connect() {
     setStatus(`Disconnected (${evt.code})`, "error");
     log(`WebSocket closed (code ${evt.code}).`);
     if (evt.code !== 1000) {
-      log("Reconnecting in 3 s…");
-      setTimeout(connect, 3000);
+      if (reconnectAttempts < MAX_RECONNECT) {
+        const delay = BASE_RECONNECT_MS * Math.pow(2, reconnectAttempts);
+        reconnectAttempts++;
+        log(`Reconnecting in ${delay / 1000} s… (attempt ${reconnectAttempts}/${MAX_RECONNECT})`);
+        setTimeout(connect, delay);
+      } else {
+        log("Could not reconnect after multiple attempts. Please refresh the page.");
+        setStatus("Connection lost", "error");
+      }
     }
   };
 
@@ -341,6 +361,7 @@ btnEnd.onclick = () => {
   if (ws) {
     ws.close(1000, "User ended interview");
     if (micStream) micStream.getTracks().forEach(t => t.stop());
+    if (sendInterval) { clearInterval(sendInterval); sendInterval = null; }
     btnEnd.disabled = true;
     setStatus("Interview ended");
   }

@@ -1,4 +1,8 @@
+import logging
+
 from agents import function_tool
+
+logger = logging.getLogger(__name__)
 
 
 @function_tool
@@ -13,9 +17,9 @@ async def update_candidate_status(
     Call this when the interview is finished or a clear go/no-go decision has been reached.
     score should be 1-10. recommendation should be 'advance', 'reject', or 'hold'.
     """
-    print(
-        f"[ATS] Updating candidate {candidate_id}: "
-        f"score={score}, recommendation={recommendation}, notes={notes!r}"
+    logger.info(
+        "[ATS] Updating candidate %s: score=%s, recommendation=%s, notes=%r",
+        candidate_id, score, recommendation, notes,
     )
     return f"Candidate {candidate_id} updated. Recommendation: {recommendation}."
 
@@ -30,7 +34,7 @@ async def lookup_candidate_document(
     document_type should be 'cv', 'cover_letter', or 'portfolio'.
     Use this before discussing the candidate's background to reference specific details.
     """
-    print(f"[Docs] Fetching {document_type} for candidate {candidate_id}")
+    logger.info("[Docs] Fetching %s for candidate %s", document_type, candidate_id)
     # TODO: replace with real document retrieval (ATS API, S3, etc.)
     return (
         f"[Placeholder CV for candidate {candidate_id}]: "
@@ -54,9 +58,9 @@ async def book_followup_interview(
     interview_type should be 'technical', 'hiring_manager', or 'final'.
     Call this when the candidate has confirmed availability and a next step is agreed upon.
     """
-    print(
-        f"[Calendar] Booking {interview_type} interview for candidate {candidate_id} "
-        f"on {preferred_date} with {interviewer_email}"
+    logger.info(
+        "[Calendar] Booking %s interview for candidate %s on %s with %s",
+        interview_type, candidate_id, preferred_date, interviewer_email,
     )
     # TODO: replace with real calendar integration (Google Calendar, Outlook, etc.)
     return (
