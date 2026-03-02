@@ -41,17 +41,6 @@
     flex-wrap: wrap;
     align-items: center;
   }
-  #language-label {
-    font-size: 0.85rem;
-    color: #4b5563;
-  }
-  #language-select {
-    padding: 0.35rem 0.6rem;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    background: #fff;
-    font-size: 0.9rem;
-  }
   button {
     padding: 0.45rem 1.1rem;
     font-size: 0.9rem;
@@ -84,11 +73,6 @@
 <div id="status">Connecting…</div>
 <div id="agent-label">Agent: —</div>
 <div id="controls">
-  <label id="language-label" for="language-select">Language</label>
-  <select id="language-select">
-    <option value="en">English</option>
-    <option value="sv">Swedish</option>
-  </select>
   <button id="btn-mute">Mute</button>
   <button id="btn-interrupt">Interrupt</button>
   <button id="btn-end" disabled>End</button>
@@ -110,7 +94,6 @@ const btnMute     = document.getElementById("btn-mute");
 const btnInterrupt= document.getElementById("btn-interrupt");
 const btnEnd      = document.getElementById("btn-end");
 const btnNewSession = document.getElementById("btn-new-session");
-const languageSelect = document.getElementById("language-select");
 
 function setStatus(text, cls) {
   statusEl.textContent = text;
@@ -142,23 +125,7 @@ function clearSessionId() {
   localStorage.removeItem("dealership_call_session_id");
 }
 
-function getOrCreateLanguage() {
-  const STORAGE_KEY = "dealership_call_language";
-  let lang = localStorage.getItem(STORAGE_KEY);
-  if (!lang) {
-    lang = "en";
-    localStorage.setItem(STORAGE_KEY, lang);
-  }
-  return lang;
-}
-
-function setLanguage(lang) {
-  localStorage.setItem("dealership_call_language", lang);
-}
-
 const SESSION_ID = getOrCreateSessionId();
-const INITIAL_LANG = getOrCreateLanguage();
-languageSelect.value = INITIAL_LANG;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let ws                  = null;
@@ -302,10 +269,8 @@ function stopPlayback() {
 // ─── WebSocket ─────────────────────────────────────────────────────────────────
 
 function connect() {
-  const lang = languageSelect.value || "en";
-  setLanguage(lang);
   setStatus("Connecting…");
-  ws = new WebSocket(`ws://${location.host}/ws/${SESSION_ID}?lang=${encodeURIComponent(lang)}`);
+  ws = new WebSocket(`ws://${location.host}/ws/${SESSION_ID}`);
   ws.binaryType = "arraybuffer";  // Receive binary frames as ArrayBuffer, not Blob
 
   ws.onopen = async () => {

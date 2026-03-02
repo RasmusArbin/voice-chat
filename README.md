@@ -10,7 +10,7 @@ A voice-based dealership call system built with OpenAI's Agents SDK. It uses Spe
 - **WebSocket Integration** for real-time bidirectional audio streaming
 - **Voice Activity Detection** for natural interruption handling
 - **Guardrails** for safe, professional responses
-- **Language Enforcement** for English or Swedish only
+- **Language Support** - Starts in Swedish, ask to switch to English at any time
 
 ## Project Structure
 
@@ -83,7 +83,6 @@ Defined in `server/tools.py`.
 
 - `GET /` – client UI
 - `GET /health` – health check
-- `GET /session/{session_id}/history` – session debug history
 - `WS /ws/{session_id}` – realtime audio/call session
 
 ## Troubleshooting

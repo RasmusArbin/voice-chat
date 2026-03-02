@@ -51,10 +51,6 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
     """One WebSocket connection = one dealership call session."""
     await websocket.accept()
 
-    lang = (websocket.query_params.get("lang") or "en").lower()
-    if lang not in {"en", "sv"}:
-        lang = "en"
-
     # Block early interrupts until the assistant starts speaking.
     allow_interrupts = False
     
