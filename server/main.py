@@ -28,91 +28,6 @@ CLIENT_HTML = Path(__file__).parent.parent / "client" / "index.html"
 
 app = FastAPI(title="AI Dealership Call")
 
-# ─── In-Memory Session Store ──────────────────────────────────────────────────
-# Stores conversation history and metadata for each session.
-# In production, replace with Redis or a database.
-
-SESSIONS: dict[str, dict[str, Any]] = {}
-
-
-class SessionStore:
-    """In-memory session store for managing dealership call sessions.
-
-    Stores both metadata (for debugging) and conversation history (for agent resumption).
-    """
-
-    @staticmethod
-    def _create_session_dict() -> dict[str, Any]:
-        """Create a new session dictionary with default values."""
-        return {
-            "created_at": asyncio.get_event_loop().time(),
-            "events": [],
-            "is_active": True,
-            "items": [],
-        }
-
-    @staticmethod
-    def get(session_id: str) -> dict[str, Any] | None:
-        """Retrieve an existing session metadata."""
-        return SESSIONS.get(session_id)
-
-    @staticmethod
-    def add_event(session_id: str, event_type: str, data: Any = None) -> None:
-        """Log an event to the session history (for debugging)."""
-        if session_id in SESSIONS:
-            SESSIONS[session_id]["events"].append(
-                {
-                    "type": event_type,
-                    "data": data,
-                    "timestamp": asyncio.get_event_loop().time(),
-                }
-            )
-
-    @staticmethod
-    def mark_inactive(session_id: str) -> None:
-        """Mark a session as inactive (but retain metadata)."""
-        if session_id in SESSIONS:
-            SESSIONS[session_id]["is_active"] = False
-            logger.info("[%s] Session marked inactive", session_id)
-
-    @staticmethod
-    def get_history(session_id: str) -> list[dict[str, Any]]:
-        """Get the event history of a session (for debugging)."""
-        if session_id in SESSIONS:
-            return SESSIONS[session_id]["events"]
-        return []
-
-    @staticmethod
-    def get_items(session_id: str) -> list[dict[str, str]]:
-        """Get stored text-based conversation items for resume."""
-        if session_id in SESSIONS:
-            return SESSIONS[session_id]["items"]
-        return []
-
-    @staticmethod
-    def set_items(session_id: str, items: list[dict[str, str]]) -> None:
-        """Replace stored conversation items for resume."""
-        if session_id not in SESSIONS:
-            SESSIONS[session_id] = SessionStore._create_session_dict()
-        SESSIONS[session_id]["items"] = items
-
-    @staticmethod
-    def add_items(session_id: str, items: list[dict[str, str]]) -> None:
-        """Append stored conversation items for resume."""
-        if session_id not in SESSIONS:
-            SESSIONS[session_id] = SessionStore._create_session_dict()
-        SESSIONS[session_id]["items"].extend(items)
-
-    @staticmethod
-    def ensure_session(session_id: str) -> None:
-        """Ensure a session exists in the store."""
-        if session_id not in SESSIONS:
-            SESSIONS[session_id] = SessionStore._create_session_dict()
-            logger.info("[%s] New session created", session_id)
-
-
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
@@ -132,22 +47,6 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/session/{session_id}/history")
-async def get_session_history(session_id: str) -> dict:
-    """Retrieve the event history for a session."""
-    session = SessionStore.get(session_id)
-    if not session:
-        return {"session_id": session_id, "found": False, "events": []}
-    
-    return {
-        "session_id": session_id,
-        "found": True,
-        "is_active": session["is_active"],
-        "event_count": len(session["events"]),
-        "events": session["events"],
-    }
-
-
 @app.websocket("/ws/{session_id}")
 async def websocket_call(websocket: WebSocket, session_id: str) -> None:
     """One WebSocket connection = one dealership call session."""
@@ -156,26 +55,10 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
     # Block early interrupts until the assistant starts speaking.
     allow_interrupts = False
     
-    # Check if this is a new or returning session
-    existing_session = SessionStore.get(session_id)
-    is_resume = existing_session and len(existing_session["items"]) > 0
-    
-    if existing_session:
-        logger.info("[%s] Client reconnected (history: %d items, resume: %s)", 
-                   session_id, len(existing_session["items"]), is_resume)
-        history_count = len(existing_session["items"])
-    else:
-        history_count = 0
-        is_resume = False
-    
-    logger.info("[%s] WebSocket connected (resuming: %s, prior items: %d)", 
-               session_id, is_resume, history_count)
+    logger.info("[%s] WebSocket connected", session_id)
 
-    # Ensure session exists in the store
-    SessionStore.ensure_session(session_id)
-
-    # Choose starting agent based on whether this is a new or resumed session
-    starting_agent = dealership_agent if is_resume else reception_agent
+    # Always start with the reception agent
+    starting_agent = reception_agent
 
     runner = RealtimeRunner(
         starting_agent=starting_agent,
@@ -204,13 +87,9 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
 
 
 
-            # For resumed sessions, send acknowledgment; for new sessions, start welcome
-            if is_resume:
-                initial_message = "I'm resuming our call. Let's continue where we left off."
-                logger.info("[%s] Resuming session with acknowledgment", session_id)
-            else:
-                initial_message = "."  # Trigger the welcome agent
-                logger.info("[%s] Starting new session with reception agent", session_id)
+            # Start with the reception agent
+            initial_message = "."  # Trigger the welcome agent
+            logger.info("[%s] Starting new session with reception agent", session_id)
             
             await session.send_message(initial_message)
 
@@ -253,17 +132,13 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
                                 allow_interrupts = True
                             # Raw PCM16 bytes — send as binary frame
                             await websocket.send_bytes(event.audio.data)
-                            SessionStore.add_event(session_id, "audio", {"bytes": len(event.audio.data)})
-
                         elif event_type == "audio_end":
                             await websocket.send_text(json.dumps({"type": "audio_end"}))
-                            SessionStore.add_event(session_id, "audio_end")
 
                         elif event_type == "audio_interrupted":
                             await websocket.send_text(
                                 json.dumps({"type": "audio_interrupted"})
                             )
-                            SessionStore.add_event(session_id, "audio_interrupted")
 
                         elif event_type == "agent_start":
                             name = getattr(getattr(event, "agent", None), "name", None)
@@ -271,7 +146,6 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
                             await websocket.send_text(
                                 json.dumps({"type": "agent_start", "agent": name})
                             )
-                            SessionStore.add_event(session_id, "agent_start", {"agent": name})
 
                         elif event_type == "handoff":
                             to_name = getattr(
@@ -281,7 +155,6 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
                             await websocket.send_text(
                                 json.dumps({"type": "handoff", "to_agent": to_name})
                             )
-                            SessionStore.add_event(session_id, "handoff", {"to_agent": to_name})
 
                         elif event_type == "tool_start":
                             tool_name = getattr(
@@ -291,7 +164,6 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
                             await websocket.send_text(
                                 json.dumps({"type": "tool_start", "tool": tool_name})
                             )
-                            SessionStore.add_event(session_id, "tool_start", {"tool": tool_name})
 
                         elif event_type == "tool_end":
                             tool_name = getattr(
@@ -300,7 +172,6 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
                             await websocket.send_text(
                                 json.dumps({"type": "tool_end", "tool": tool_name})
                             )
-                            SessionStore.add_event(session_id, "tool_end", {"tool": tool_name})
 
                         elif event_type == "error":
                             logger.error("[%s] Session error: %s", session_id, event)
@@ -308,7 +179,6 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
                                 # Do not expose internal error details to the client in production
                                 json.dumps({"type": "error", "message": "Internal server error"})
                             )
-                            SessionStore.add_event(session_id, "error", {"message": str(event)})
 
                 except WebSocketDisconnect:
                     pass
@@ -332,7 +202,4 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
         except Exception:
             pass
     finally:
-        SessionStore.mark_inactive(session_id)
-        history = SessionStore.get_history(session_id)
-        logger.info("[%s] Session inactive (events: %d, items: %d)", 
-                   session_id, len(history), len(SESSIONS.get(session_id, {}).get("items", [])))
+        logger.info("[%s] Session ended", session_id)
