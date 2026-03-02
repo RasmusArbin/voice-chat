@@ -12,7 +12,6 @@ from fastapi.responses import HTMLResponse
 
 from agents.realtime import RealtimeRunner
 from agents.realtime.config import RealtimeRunConfig, RealtimeSessionModelSettings
-from agents.realtime.model_inputs import RealtimeModelSendRawMessage
 
 from dealership_agents import reception_agent, dealership_agent
 
@@ -89,24 +88,9 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
                        session_id, starting_agent.name)
             await websocket.send_text(json.dumps({"type": "session_ready"}))
 
-
-
-            # Start with the reception agent
-            language_name = "Swedish" if lang == "sv" else "English"
-            await session.send_message(
-                RealtimeModelSendRawMessage(
-                    message={
-                        "type": "message",
-                        "other_data": {
-                            "role": "system",
-                            "content": [
-                                {"type": "input_text", "text": f"You must speak only in {language_name}."}
-                            ],
-                        },
-                    }
-                )
-            )
-            initial_message = "."  # Trigger the welcome agent
+            # Trigger the welcome agent with an initial message
+            # The language instruction should be in the agent's system prompt instead
+            initial_message = "."
             logger.info("[%s] Starting new session with reception agent", session_id)
             
             await session.send_message(initial_message)
