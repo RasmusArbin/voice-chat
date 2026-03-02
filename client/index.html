@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Interview</title>
+<title>AI Dealership Call</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -67,7 +67,7 @@
 </style>
 </head>
 <body>
-<h1>AI Interview</h1>
+<h1>AI Dealership Call</h1>
 <div id="status">Connecting…</div>
 <div id="agent-label">Agent: —</div>
 <div id="controls">
@@ -105,7 +105,7 @@ function log(text) {
 
 // ─── Session Management ────────────────────────────────────────────────────────
 function getOrCreateSessionId() {
-  const STORAGE_KEY = "interview_session_id";
+  const STORAGE_KEY = "dealership_call_session_id";
   let sessionId = localStorage.getItem(STORAGE_KEY);
   
   if (!sessionId) {
@@ -120,7 +120,7 @@ function getOrCreateSessionId() {
 }
 
 function clearSessionId() {
-  localStorage.removeItem("interview_session_id");
+  localStorage.removeItem("dealership_call_session_id");
 }
 
 const SESSION_ID = getOrCreateSessionId();
@@ -299,10 +299,10 @@ function connect() {
     }
     switch (msg.type) {
       case "session_ready":
-        setStatus("Interview in progress", "connected");
+        setStatus("Call in progress", "connected");
         isConnected = true;
         btnEnd.disabled = false;
-        log("Session ready. Interview starting…");
+        log("Session ready. Call starting…");
         break;
 
       case "audio_end":
@@ -383,11 +383,11 @@ btnInterrupt.onclick = () => {
 
 btnEnd.onclick = () => {
   if (ws) {
-    ws.close(1000, "User ended interview");
+    ws.close(1000, "User ended call");
     if (micStream) micStream.getTracks().forEach(t => t.stop());
     if (sendInterval) { clearInterval(sendInterval); sendInterval = null; }
     btnEnd.disabled = true;
-    setStatus("Interview ended");
+    setStatus("Call ended");
     clearSessionId();  // Clear session on explicit termination
     log("Session cleared.");
   }

@@ -14,7 +14,7 @@ from agents.realtime import RealtimeRunner
 from agents.realtime.config import RealtimeRunConfig, RealtimeSessionModelSettings
 from agents.realtime.model_inputs import RealtimeModelSendRawMessage
 
-from interview_agents import welcome_agent, main_interviewer
+from dealership_agents import reception_agent, dealership_agent
 
 load_dotenv()
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 CLIENT_HTML = Path(__file__).parent.parent / "client" / "index.html"
 
-app = FastAPI(title="AI Voice Interview")
+app = FastAPI(title="AI Dealership Call")
 
 # ─── In-Memory Session Store ──────────────────────────────────────────────────
 # Stores conversation history and metadata for each session.
@@ -36,8 +36,8 @@ SESSIONS: dict[str, dict[str, Any]] = {}
 
 
 class SessionStore:
-    """In-memory session store for managing interview sessions.
-    
+    """In-memory session store for managing dealership call sessions.
+
     Stores both metadata (for debugging) and conversation history (for agent resumption).
     """
 
@@ -149,8 +149,8 @@ async def get_session_history(session_id: str) -> dict:
 
 
 @app.websocket("/ws/{session_id}")
-async def websocket_interview(websocket: WebSocket, session_id: str) -> None:
-    """One WebSocket connection = one interview session."""
+async def websocket_call(websocket: WebSocket, session_id: str) -> None:
+    """One WebSocket connection = one dealership call session."""
     await websocket.accept()
 
     # Block early interrupts until the assistant starts speaking.
@@ -175,7 +175,7 @@ async def websocket_interview(websocket: WebSocket, session_id: str) -> None:
     SessionStore.ensure_session(session_id)
 
     # Choose starting agent based on whether this is a new or resumed session
-    starting_agent = main_interviewer if is_resume else welcome_agent
+    starting_agent = dealership_agent if is_resume else reception_agent
 
     runner = RealtimeRunner(
         starting_agent=starting_agent,
@@ -206,11 +206,11 @@ async def websocket_interview(websocket: WebSocket, session_id: str) -> None:
 
             # For resumed sessions, send acknowledgment; for new sessions, start welcome
             if is_resume:
-                initial_message = "I'm resuming our interview. Let's continue where we left off."
+                initial_message = "I'm resuming our call. Let's continue where we left off."
                 logger.info("[%s] Resuming session with acknowledgment", session_id)
             else:
                 initial_message = "."  # Trigger the welcome agent
-                logger.info("[%s] Starting new session with welcome agent", session_id)
+                logger.info("[%s] Starting new session with reception agent", session_id)
             
             await session.send_message(initial_message)
 

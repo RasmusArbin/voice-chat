@@ -1,8 +1,8 @@
 """
-Mock tools that can be called by agents during interviews.
+Mock tools that can be called by agents during dealership calls.
 
 These are placeholder implementations demonstrating the tool interface.
-In production, replace with real integrations to your ATS, document storage,
+In production, replace with real integrations to your CRM, inventory systems,
 calendar systems, and other backend services.
 """
 
@@ -14,64 +14,56 @@ logger = logging.getLogger(__name__)
 
 
 @function_tool
-async def update_candidate_status(
-    candidate_id: str,
-    score: int,
-    notes: str,
-    recommendation: str,
+async def get_dealership_info(
+    location: str,
 ) -> str:
     """
-    Updates a candidate's status and score in the ATS after the interview.
-    Call this when the interview is finished or a clear go/no-go decision has been reached.
-    score should be 1-10. recommendation should be 'advance', 'reject', or 'hold'.
+    Returns basic dealership information for a given location.
+    location should be a city or area name (e.g. 'Stockholm', 'Gothenburg').
     """
-    logger.info(
-        "[ATS] Updating candidate %s: score=%s, recommendation=%s, notes=%r",
-        candidate_id, score, recommendation, notes,
-    )
-    return f"Candidate {candidate_id} updated. Recommendation: {recommendation}."
-
-
-@function_tool
-async def lookup_candidate_document(
-    candidate_id: str,
-    document_type: str,
-) -> str:
-    """
-    Retrieves the text content of a candidate document.
-    document_type should be 'cv', 'cover_letter', or 'portfolio'.
-    Use this before discussing the candidate's background to reference specific details.
-    """
-    logger.info("[Docs] Fetching %s for candidate %s", document_type, candidate_id)
-    # TODO: replace with real document retrieval (ATS API, S3, etc.)
+    logger.info("[Dealership] Fetching info for location %s", location)
+    # TODO: replace with real dealership directory lookup
     return (
-        f"[Placeholder CV for candidate {candidate_id}]: "
-        "5 years of experience in Python and cloud infrastructure. "
-        "Previously at Acme Corp as a backend engineer. "
-        "Bachelor's degree in Computer Science. "
-        "Proficient in FastAPI, PostgreSQL, AWS, and Docker."
+        f"Dealership info for {location}: Open Mon-Sat 09:00-18:00, "
+        "Sun 11:00-16:00. Address: 123 Main St. "
+        "Phone: +46 8 123 456. Services: sales, test drives, trade-ins."
     )
 
 
 @function_tool
-async def book_followup_interview(
-    candidate_id: str,
-    preferred_date: str,
-    interviewer_email: str,
-    interview_type: str,
+async def check_calendar_availability(
+    date: str,
+    time_window: str,
 ) -> str:
     """
-    Books a follow-up interview slot in the recruiter's calendar.
-    preferred_date should be an ISO 8601 date string (e.g. '2025-03-15').
-    interview_type should be 'technical', 'hiring_manager', or 'final'.
-    Call this when the candidate has confirmed availability and a next step is agreed upon.
+    Checks whether the dealership has availability in a given time window.
+    date should be an ISO 8601 date string (e.g. '2026-03-05').
+    time_window should be a simple range (e.g. '10:00-12:00').
+    """
+    logger.info("[Calendar] Checking availability on %s during %s", date, time_window)
+    # TODO: replace with real calendar availability lookup
+    return f"Availability found on {date} between {time_window}."
+
+
+@function_tool
+async def book_meeting(
+    customer_name: str,
+    date: str,
+    time: str,
+    purpose: str,
+) -> str:
+    """
+    Books a dealership meeting such as a test drive or consultation.
+    date should be an ISO 8601 date string (e.g. '2026-03-05').
+    time should be a 24-hour time string (e.g. '14:30').
+    purpose should be 'test_drive', 'sales_consultation', or 'trade_in_review'.
     """
     logger.info(
-        "[Calendar] Booking %s interview for candidate %s on %s with %s",
-        interview_type, candidate_id, preferred_date, interviewer_email,
+        "[Calendar] Booking %s for %s on %s at %s",
+        purpose, customer_name, date, time,
     )
     # TODO: replace with real calendar integration (Google Calendar, Outlook, etc.)
     return (
-        f"Follow-up {interview_type} interview booked for {preferred_date} "
-        f"with {interviewer_email}. A confirmation will be sent to the candidate."
+        f"Booked {purpose} for {customer_name} on {date} at {time}. "
+        "A confirmation will be sent to the customer."
     )
