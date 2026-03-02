@@ -52,6 +52,10 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
     """One WebSocket connection = one dealership call session."""
     await websocket.accept()
 
+    lang = (websocket.query_params.get("lang") or "en").lower()
+    if lang not in {"en", "sv"}:
+        lang = "en"
+
     # Block early interrupts until the assistant starts speaking.
     allow_interrupts = False
     
@@ -88,6 +92,20 @@ async def websocket_call(websocket: WebSocket, session_id: str) -> None:
 
 
             # Start with the reception agent
+            language_name = "Swedish" if lang == "sv" else "English"
+            await session.send_message(
+                RealtimeModelSendRawMessage(
+                    message={
+                        "type": "message",
+                        "other_data": {
+                            "role": "system",
+                            "content": [
+                                {"type": "input_text", "text": f"You must speak only in {language_name}."}
+                            ],
+                        },
+                    }
+                )
+            )
             initial_message = "."  # Trigger the welcome agent
             logger.info("[%s] Starting new session with reception agent", session_id)
             
