@@ -106,32 +106,13 @@ function log(text) {
 }
 
 // ─── Session Management ────────────────────────────────────────────────────────
-function getOrCreateSessionId() {
-  const STORAGE_KEY = "dealership_call_session_id";
-  let sessionId = localStorage.getItem(STORAGE_KEY);
-  
-  if (!sessionId) {
-    sessionId = crypto.randomUUID();
-    localStorage.setItem(STORAGE_KEY, sessionId);
-    log("Created new session: " + sessionId.substring(0, 8) + "...");
-  } else {
-    log("Resuming session: " + sessionId.substring(0, 8) + "...");
-  }
-  
-  return sessionId;
-}
-
-function clearSessionId() {
-  localStorage.removeItem("dealership_call_session_id");
-}
-
-const SESSION_ID = getOrCreateSessionId();
+const SESSION_ID = crypto.randomUUID();
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let ws                  = null;
 let audioCtx            = null;
 let micStream           = null;
-let isMuted             = false;
+let isMuted             = true;  // Start muted to prevent interrupting agent greeting
 let isConnected         = false;
 let scheduledEnd        = 0;             // AudioContext time through which output is scheduled
 let sendBuf             = new Int16Array(0);
@@ -215,6 +196,10 @@ async function startMicrophone() {
   source.connect(processor);
   processor.connect(audioCtx.destination);
   log("Microphone active.");
+  
+  // Update button to reflect initial muted state
+  btnMute.textContent = "Unmute";
+  btnMute.classList.add("active");
 }
 
 // ─── Audio playback ────────────────────────────────────────────────────────────
@@ -287,6 +272,13 @@ function connect() {
 
   ws.onmessage = (evt) => {
     if (evt.data instanceof ArrayBuffer) {
+      // Auto-unmute on first agent audio to allow user to respond
+      if (isMuted) {
+        isMuted = false;
+        btnMute.textContent = "Mute";
+        btnMute.classList.remove("active");
+        log("Microphone unmuted (agent speaking).");
+      }
       playAudio(evt.data);
       return;
     }
@@ -389,13 +381,11 @@ btnEnd.onclick = () => {
     if (sendInterval) { clearInterval(sendInterval); sendInterval = null; }
     btnEnd.disabled = true;
     setStatus("Call ended");
-    clearSessionId();  // Clear session on explicit termination
-    log("Session cleared.");
+    log("Call ended.");
   }
 };
 
 btnNewSession.onclick = () => {
-  clearSessionId();
   if (ws) {
     ws.close(1000, "Starting new session");
     if (micStream) micStream.getTracks().forEach(t => t.stop());
@@ -403,11 +393,6 @@ btnNewSession.onclick = () => {
   }
   log("Starting new session...");
   setTimeout(() => location.reload(), 500);
-};
-
-languageSelect.onchange = () => {
-  setLanguage(languageSelect.value);
-  log(`Language set to ${languageSelect.value === "sv" ? "Swedish" : "English"}.`);
 };
 
 // Keepalive ping every 30 s
