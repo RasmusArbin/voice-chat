@@ -94,3 +94,12 @@ Defined in `server/tools.py`.
 ## Notes
 
 - Sessions are stateless; each connection starts a new call.
+
+## Known Issues / Limitations
+
+- Language switching can be inconsistent; the handoff note is sometimes not honored, so the dealership agent may default to Swedish.
+- Handoff can result in silence or delayed speech from the dealership agent in some sessions.
+- The dealership agent can apologize after handoff despite prompt guidance.
+- Calls must be ended by the user via the UI; there is no automatic call termination.
+- Agent interruption can still occur due to background audio or mic sensitivity, especially at session start.
+- Duplicate "Agent active" events have been observed after handoff when triggers or timing overlap.
