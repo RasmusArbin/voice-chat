@@ -9,7 +9,6 @@ A voice-based dealership call system built with OpenAI's Agents SDK. It uses Spe
 - **Stateless Sessions** start fresh on each connection
 - **WebSocket Integration** for real-time bidirectional audio streaming
 - **Voice Activity Detection** for natural interruption handling
-- **Guardrails** for safe, professional responses
 - **Language Choice** - Reception asks Swedish or English at start and sticks to it
 
 ## Project Structure
