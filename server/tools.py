@@ -24,9 +24,13 @@ async def get_dealership_info(
     logger.info("[Dealership] Fetching info for location %s", location)
     # TODO: replace with real dealership directory lookup
     return (
-        f"Dealership info for {location}: Open Mon-Sat 09:00-18:00, "
-        "Sun 11:00-16:00. Address: 123 Main St. "
-        "Phone: +46 8 123 456. Services: sales, test drives, trade-ins."
+        f"Dealership info for {location}: Northlake Auto. "
+        "Address: 214 Bergsgatan, Gothenburg. "
+        "Phone: +46 31 555 120. "
+        "Hours: Mon-Fri 09:00-18:00, Sat 10:00-15:00, Sun closed. "
+        "Brands: Volvo, Volkswagen, Toyota. "
+        "Services: new and used cars, trade-ins, financing, service bookings. "
+        "Test drives: available daily by appointment."
     )
 
 

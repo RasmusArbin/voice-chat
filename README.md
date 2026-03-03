@@ -6,11 +6,11 @@ A voice-based dealership call system built with OpenAI's Agents SDK. It uses Spe
 
 - **Real-time Voice Calls** with low-latency speech interaction
 - **Multi-Agent Architecture** with reception and dealership roles
-- **Session Persistence Infrastructure** for future conversation replay support
+- **Stateless Sessions** start fresh on each connection
 - **WebSocket Integration** for real-time bidirectional audio streaming
 - **Voice Activity Detection** for natural interruption handling
 - **Guardrails** for safe, professional responses
-- **Language Support** - Starts in Swedish, ask to switch to English at any time
+- **Language Choice** - Reception asks Swedish or English at start and sticks to it
 
 ## Project Structure
 
@@ -93,5 +93,4 @@ Defined in `server/tools.py`.
 
 ## Notes
 
-- Session history capture is not fully implemented by current SDK event support.
-- In production, replace in-memory session storage with Redis or a database.
+- Sessions are stateless; each connection starts a new call.

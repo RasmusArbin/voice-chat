@@ -85,6 +85,7 @@
 const TARGET_RATE      = 24000;   // Hz — must match OpenAI Realtime API
 const SEND_INTERVAL_MS = 100;     // Flush mic buffer to server every 100 ms
 const LOOKAHEAD_S      = 0.05;    // 50 ms scheduler lookahead for gapless playback
+const MIC_RMS_THRESHOLD = 0.02;   // Less sensitive: ignore very quiet input
 
 // ─── UI helpers (must be before session creation) ────────────────────────────
 const statusEl    = document.getElementById("status");
@@ -156,6 +157,12 @@ function int16ToFloat32(buf) {
   return f32;
 }
 
+function computeRms(f32) {
+  let sum = 0;
+  for (let i = 0; i < f32.length; i++) sum += f32[i] * f32[i];
+  return Math.sqrt(sum / f32.length);
+}
+
 // ─── Microphone capture ────────────────────────────────────────────────────────
 
 async function startMicrophone() {
@@ -172,6 +179,7 @@ async function startMicrophone() {
     if (!isConnected || isMuted) return;
 
     const raw       = e.inputBuffer.getChannelData(0);
+    if (computeRms(raw) < MIC_RMS_THRESHOLD) return;
     const resampled = resample(raw, audioCtx.sampleRate, TARGET_RATE);
     const chunk     = floatToInt16(resampled);
 
