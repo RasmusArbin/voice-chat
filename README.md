@@ -90,6 +90,10 @@ Defined in `server/tools.py`.
 - Start Docker Desktop and ensure Linux containers/WSL2 engine are enabled.
 - If the mic fails, verify browser microphone permissions.
 
+## Disclaimer
+
+- This project utilized AI agents for research and code generation.
+
 ## Notes
 
 - Sessions are stateless; each connection starts a new call.
@@ -102,3 +106,12 @@ Defined in `server/tools.py`.
 - Calls must be ended by the user via the UI; there is no automatic call termination.
 - Agent interruption can still occur due to background audio or mic sensitivity, especially at session start.
 - Duplicate "Agent active" events have been observed after handoff when triggers or timing overlap.
+- Scheduling does not account for the current date/time, so past or otherwise invalid slots may be accepted; needs restriction/guardrails.
+
+## Next Steps
+
+1. Fix the known issues and connect tools to real data.
+2. Split the application into client and server so the client can be hosted on a CDN and the server can run in a separate Docker container, enabling independent scaling.
+3. Move to the cloud by utilizing a CDN, existing data storage, and container orchestration such as managed Kubernetes or another managed cloud service.
+4. Create personas and simulate conversations with the agents, then analyze the results to improve conversation quality and agent behavior.
+5. Add a feedback loop so users can tell us how interactions went, enabling continuous improvement.
